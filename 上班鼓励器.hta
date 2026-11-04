@@ -62,6 +62,46 @@
     transition: border-color .2s, box-shadow .2s;
   }
   .fcell input:focus { border-color: #f5c542; box-shadow: inset 0 2px 6px rgba(0,0,0,0.5), 0 0 0 3px rgba(245,197,66,0.12); }
+  /* ---------- 数字输入框（过滤 + 步进器） ---------- */
+  .num, .num * { box-sizing: border-box; }
+  .num { position: relative; width: 328px; }
+  .num input { width: 100%; padding-right: 34px; }
+  .num-spin { position: absolute; right: 1px; top: 1px; bottom: 1px; width: 26px; }
+  .num-up, .num-down {
+    position: absolute; left: 0; right: 0; height: 50%;
+    background: #1a2030; color: #f5c542; font-size: 9px; text-align: center;
+    cursor: pointer; overflow: hidden;
+  }
+  .num-up { top: 0; line-height: 21px; border-radius: 0 8px 0 0; border-bottom: 1px solid #26304a; }
+  .num-down { bottom: 0; line-height: 19px; border-radius: 0 0 8px 0; }
+  .num-up:hover, .num-down:hover { background: #26304a; color: #ffe08a; }
+  .num-up:active, .num-down:active { background: #f5c542; color: #171204; }
+  /* ---------- 滚轮式时间选择器 ---------- */
+  .tp { position: relative; width: 306px; }
+  .tp-display {
+    padding: 10px 12px; font-size: 17px; color: #fff; font-family: Consolas, monospace; letter-spacing: 1px;
+    background: #0a0d14; border: 1px solid #26304a; border-radius: 9px; cursor: pointer;
+    box-shadow: inset 0 2px 6px rgba(0,0,0,0.5); transition: border-color .2s, box-shadow .2s;
+  }
+  .tp-display:after { content: "\25BE"; float: right; color: #f5c542; font-size: 14px; }
+  .tp-display.open, .tp-display:hover { border-color: #f5c542; box-shadow: inset 0 2px 6px rgba(0,0,0,0.5), 0 0 0 3px rgba(245,197,66,0.12); }
+  .tp-pop {
+    position: absolute; left: 0; top: 46px; z-index: 30; width: 236px; padding: 8px;
+    background: #10141d; border: 1px solid #26304a; border-radius: 12px;
+    box-shadow: 0 18px 44px rgba(0,0,0,0.7), 0 0 0 1px rgba(245,197,66,0.08);
+  }
+  .tp-head { height: 26px; line-height: 26px; margin-bottom: 6px; font-size: 12px; color: #7d8698; letter-spacing: 1px; }
+  .tp-back { display: inline-block; width: 22px; text-align: center; color: #f5c542; cursor: pointer; }
+  .tp-back.hidden { display: none; }
+  .tp-cur { float: right; color: #f5c542; font-family: Consolas, monospace; }
+  .tp-grid { width: 216px; }
+  .tp-gcell {
+    display: inline-block; width: 32px; height: 24px; line-height: 24px; margin: 2px;
+    text-align: center; font-family: Consolas, monospace; font-size: 13px; color: #c6cddc;
+    background: #0a0d14; border: 1px solid #1c2230; border-radius: 6px; cursor: pointer;
+  }
+  .tp-gcell:hover { border-color: #f5c542; color: #ffe08a; box-shadow: 0 0 8px rgba(245,197,66,0.25); }
+  .tp-gcell.on { background-image: linear-gradient(180deg, #ffe08a, #f5c542); color: #171204; font-weight: bold; border-color: #f5c542; box-shadow: 0 0 10px rgba(245,197,66,0.45); }
   .seg { float: right; margin-top: -2px; }
   .seg-btn {
     display: inline-block; padding: 2px 12px; font-size: 11px; color: #7d8698;
@@ -230,11 +270,25 @@
     <div>
       <div class="fcell">
         <label>&#9200; 上班时间</label>
-        <input type="time" id="inStart" value="09:00">
+        <div class="tp" id="tpStart">
+          <div class="tp-display" id="tpStartDisp">09:00</div>
+          <div class="tp-pop hidden" id="tpStartPop">
+            <div class="tp-head"><span class="tp-back hidden" id="tpStartBack">&#9664;</span><span id="tpStartTitle">选择小时</span><span class="tp-cur" id="tpStartCur">09:00</span></div>
+            <div class="tp-grid" id="tpStartGrid"></div>
+          </div>
+        </div>
+        <p class="f-hint">点击弹出选择器，先选时再选分</p>
       </div>
       <div class="fcell">
         <label>&#127769; 下班时间（正常）</label>
-        <input type="time" id="inEnd" value="18:00">
+        <div class="tp" id="tpEnd">
+          <div class="tp-display" id="tpEndDisp">18:00</div>
+          <div class="tp-pop hidden" id="tpEndPop">
+            <div class="tp-head"><span class="tp-back hidden" id="tpEndBack">&#9664;</span><span id="tpEndTitle">选择小时</span><span class="tp-cur" id="tpEndCur">18:00</span></div>
+            <div class="tp-grid" id="tpEndGrid"></div>
+          </div>
+        </div>
+        <p class="f-hint">点击弹出选择器，先选时再选分</p>
       </div>
       <div class="fcell">
         <label>&#128176; 薪资
@@ -242,12 +296,18 @@
             <span class="seg-btn first on" id="segDay">日薪</span><span class="seg-btn last" id="segMonth">月薪</span>
           </span>
         </label>
-        <input type="text" id="inDaily" value="500">
+        <div class="num">
+          <input type="text" id="inDaily" value="500">
+          <span class="num-spin"><span class="num-up" id="upDaily">&#9650;</span><span class="num-down" id="downDaily">&#9660;</span></span>
+        </div>
         <p class="f-hint" id="salaryHint">单位：元 / 天，按日薪直接结算</p>
       </div>
       <div class="fcell">
         <label>&#9889; 加班时薪（元 / 小时）</label>
-        <input type="text" id="inOt" value="50">
+        <div class="num">
+          <input type="text" id="inOt" value="50">
+          <span class="num-spin"><span class="num-up" id="upOt">&#9650;</span><span class="num-down" id="downOt">&#9660;</span></span>
+        </div>
         <p class="f-hint">班次时段之外的时间均按此费率累计</p>
       </div>
     </div>
@@ -453,12 +513,23 @@ function playCelebration() {
 }
 
 /* ================= 时间工具 ================= */
-function hmToSec(hhmm) {
-  var p = hhmm.split(":");
-  return (parseInt(p[0], 10) * 3600) + (parseInt(p[1], 10) * 60);
+/* 宽容时间解析：兼容 08:30 / 8.30 / 8，30 / 830 / 全角冒号 / 带空格；非法返回 -1 */
+function parseTimeStr(v) {
+  if (v === null || v === undefined) return -1;
+  var s = String(v).replace(/\s/g, "");
+  s = s.replace(/[\uFF10-\uFF19]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); });  // 全角数字→半角
+  s = s.replace(/[：．.,，、]/g, ":");
+  if (/^\d{3,4}$/.test(s)) {
+    s = parseInt(s.substring(0, s.length - 2), 10) + ":" + s.substring(s.length - 2);
+  }
+  var mm = /^(\d{1,2}):(\d{1,2})$/.exec(s);
+  if (!mm) return -1;
+  var hh = parseInt(mm[1], 10), mi = parseInt(mm[2], 10);
+  if (isNaN(hh) || isNaN(mi) || hh > 23 || mi > 59) return -1;
+  return hh * 3600 + mi * 60;
 }
 function fmtDur(sec) {
-  if (sec < 0) sec = 0;
+  if (!isFinite(sec) || sec < 0) sec = 0;
   sec = Math.floor(sec);
   return pad(Math.floor(sec / 3600)) + ":" + pad(Math.floor((sec % 3600) / 60)) + ":" + pad(sec % 60);
 }
@@ -543,7 +614,7 @@ function renderDayRows(tbodyId, rows) {
 
 /* ================= 金额显示（4 位小数） ================= */
 function setMoney(v) {
-  if (v < 0) v = 0;
+  if (!isFinite(v) || v < 0) v = 0;
   var s = v.toFixed(4).split(".");
   $id("mInt").innerHTML = s[0];
   $id("mDec").innerHTML = "." + s[1];
@@ -586,10 +657,99 @@ function loadState() {
   try { return JSON.parse(s); } catch (e) { return null; }
 }
 
+/* ================= 数字输入框：过滤非数字 + 步进器 ================= */
+function sanitizeNum(el, maxDec) {
+  var v = el.value;
+  var s = v.replace(/[^\d.]/g, "");
+  var i = s.indexOf(".");
+  if (i >= 0) {
+    s = s.substring(0, i + 1) + s.substring(i + 1).replace(/\./g, "");
+    var parts = s.split(".");
+    if (parts[1] && parts[1].length > maxDec) s = parts[0] + "." + parts[1].substring(0, maxDec);
+  }
+  if (s !== v) el.value = s;
+}
+function numStep(el, delta, maxDec) {
+  var cur = parseFloat(el.value);
+  if (isNaN(cur)) cur = 0;
+  var nv = cur + delta;
+  if (nv < 0) nv = 0;
+  nv = Math.round(nv * 100) / 100;
+  el.value = String(nv);
+  sanitizeNum(el, maxDec);
+  if (el.oninput) el.oninput();
+}
+
+/* ================= 两级网格式时间选择器（时 → 分，零滚动） ================= */
+var tpState = { start: { h: 9, m: 0 }, end: { h: 18, m: 0 } };
+var tpView = { start: "h", end: "h" };
+function tpIds(which) {
+  return which === "start"
+    ? { disp: "tpStartDisp", pop: "tpStartPop", grid: "tpStartGrid", title: "tpStartTitle", back: "tpStartBack", cur: "tpStartCur" }
+    : { disp: "tpEndDisp", pop: "tpEndPop", grid: "tpEndGrid", title: "tpEndTitle", back: "tpEndBack", cur: "tpEndCur" };
+}
+function tpSyncDisp(which) {
+  var st = tpState[which];
+  $id(tpIds(which).disp).innerHTML = pad(st.h) + ":" + pad(st.m);
+}
+function tpRenderGrid(which) {
+  var ids = tpIds(which);
+  var st = tpState[which];
+  var view = tpView[which];
+  var n = view === "h" ? 24 : 60;
+  var html = "";
+  for (var i = 0; i < n; i++) {
+    var sel = view === "h" ? i === st.h : i === st.m;
+    html += "<div class='tp-gcell" + (sel ? " on" : "") + "' data-v='" + i + "'>" + pad(i) + "</div>";
+  }
+  $id(ids.grid).innerHTML = html;
+  $id(ids.grid).onclick = function (e) { tpGridPick(e, which); };
+  $id(ids.title).innerHTML = view === "h" ? "选择小时" : "选择分钟";
+  $id(ids.back).className = view === "h" ? "tp-back hidden" : "tp-back";
+  $id(ids.back).onclick = function () { tpView[which] = "h"; tpRenderGrid(which); };
+  $id(ids.cur).innerHTML = pad(st.h) + ":" + pad(st.m);
+}
+function tpGridPick(e, which) {
+  e = e || window.event;
+  var t = e.target || e.srcElement;
+  if (!t || !t.getAttribute) return;
+  var v = t.getAttribute("data-v");
+  if (v === null) return;
+  v = parseInt(v, 10);
+  if (tpView[which] === "h") {
+    tpState[which].h = v;
+    tpView[which] = "m";
+    tpRenderGrid(which);
+  } else {
+    tpState[which].m = v;
+    tpSyncDisp(which);
+    tpView[which] = "h";
+    tpClose(which);
+  }
+}
+function tpToggle(which) {
+  var ids = tpIds(which);
+  var pop = $id(ids.pop);
+  if (String(pop.className).indexOf("hidden") >= 0) {
+    tpCloseAll();
+    tpView[which] = "h";
+    pop.className = "tp-pop";
+    tpRenderGrid(which);
+    $id(ids.disp).className = "tp-display open";
+  } else {
+    tpClose(which);
+  }
+}
+function tpClose(which) {
+  $id(tpIds(which).pop).className = "tp-pop hidden";
+  $id(tpIds(which).disp).className = "tp-display";
+}
+function tpCloseAll() { tpClose("start"); tpClose("end"); }
+
 /* ================= 开始上班 ================= */
 function buildS(sv, ev, rawSalary, ov, mode) {
-  var startSec = hmToSec(sv);
-  var endSec = hmToSec(ev);
+  var startSec = parseTimeStr(sv);
+  var endSec = parseTimeStr(ev);
   var shiftLen = endSec - startSec;
   if (shiftLen <= 0) shiftLen += 86400;   // 跨零点
   var daily = mode === "month" ? rawSalary / MONTH_DAYS : rawSalary;
@@ -625,12 +785,14 @@ function enterWork() {
   tick();
 }
 function onStart() {
-  var sv = $id("inStart").value;
-  var ev = $id("inEnd").value;
+  var sv = pad(tpState.start.h) + ":" + pad(tpState.start.m);
+  var ev = pad(tpState.end.h) + ":" + pad(tpState.end.m);
   var rawSalary = parseFloat($id("inDaily").value);
   var ov = parseFloat($id("inOt").value);
 
-  if (!sv || !ev) { alert("请选择上班时间和下班时间！"); return; }
+  if (!sv || !ev) { alert("请填写上班时间和下班时间！"); return; }
+  if (parseTimeStr(sv) < 0) { alert("上班时间格式不正确！请按 08:30 格式填写（也认可 8.30 或 830）。"); return; }
+  if (parseTimeStr(ev) < 0) { alert("下班时间格式不正确！请按 17:30 格式填写（也认可 17.30 或 1730）。"); return; }
   if (!(rawSalary > 0)) { alert(salaryMode === "day" ? "请输入正确的日薪（大于 0 的数字）！" : "请输入正确的月薪（大于 0 的数字）！"); return; }
   if (isNaN(ov) || ov < 0) ov = 0;
 
@@ -879,10 +1041,27 @@ function stopConfetti() {
 
 /* ================= 事件绑定与初始化 ================= */
 $id("btnStart").onclick = onStart;
+$id("tpStartDisp").onclick = function () { tpToggle("start"); };
+$id("tpEndDisp").onclick = function () { tpToggle("end"); };
+document.onclick = function (e) {
+  e = e || window.event;
+  var t = e.target || e.srcElement;
+  while (t && t !== document) {
+    if ((t.id && String(t.id).indexOf("tp") === 0) || /tp-/.test(String(t.className))) return;
+    t = t.parentNode;
+  }
+  tpCloseAll();
+};
 $id("segDay").onclick = function () { setSalaryMode("day"); };
 $id("segMonth").onclick = function () { setSalaryMode("month"); };
-$id("inDaily").oninput = updateSalaryHint;
-$id("inDaily").onpropertychange = updateSalaryHint;
+$id("inDaily").oninput = function () { sanitizeNum($id("inDaily"), 2); updateSalaryHint(); };
+$id("inDaily").onpropertychange = function () { sanitizeNum($id("inDaily"), 2); updateSalaryHint(); };
+$id("inOt").oninput = function () { sanitizeNum($id("inOt"), 2); };
+$id("inOt").onpropertychange = function () { sanitizeNum($id("inOt"), 2); };
+$id("upDaily").onclick = function () { numStep($id("inDaily"), 50, 2); };
+$id("downDaily").onclick = function () { numStep($id("inDaily"), -50, 2); };
+$id("upOt").onclick = function () { numStep($id("inOt"), 5, 2); };
+$id("downOt").onclick = function () { numStep($id("inOt"), -5, 2); };
 $id("btnStop").onclick = onStop;
 $id("btnCancel").onclick = onCancel;
 $id("btnAgain").onclick = onAgain;
