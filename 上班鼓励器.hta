@@ -123,6 +123,16 @@
   }
   #resumeBar .btn { padding: 5px 16px; font-size: 12px; margin-left: 8px; letter-spacing: 1px; }
 
+  /* ---------- 归档提示 toast（克制、无声无彩带） ---------- */
+  #toast {
+    position: fixed; top: 18px; left: 50%; width: 600px; margin-left: -300px; z-index: 60;
+    padding: 10px 16px; text-align: center; font-size: 13px; color: #ffe08a; letter-spacing: 1px;
+    background: #1a1608; border: 1px solid #7a6524; border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+  }
+  .cum-line { margin-top: 8px; font-size: 12px; color: #7d8698; letter-spacing: 1px; }
+  .cum-line b { color: #f5c542; font-family: Consolas, monospace; font-size: 14px; }
+
   /* ---------- 按钮 ---------- */
   .btn {
     font-family: "Microsoft YaHei", sans-serif;
@@ -311,7 +321,7 @@
         <p class="f-hint">班次时段之外的时间均按此费率累计</p>
       </div>
     </div>
-    <p class="setup-tip">跨零点班次自动识别为次日下班；连续跨天上班将按"每日班次段计日薪、其余时段计加班"循环累计；<br>中途关闭程序不会丢班次，下次启动可接续上一班。</p>
+    <p class="setup-tip">开工后实时累计：班次内按日薪费率、班次外按加班费率；<br>没点下班 = 还在干 = 加班继续算钱；次日上班点自动把前一天账块归档入历史（只记账、不打断加班）；<br>结算与庆祝只在你亲手点“下班结算”时发生。</p>
     <div class="btnrow">
       <button class="btn btn-start" id="btnStart">&#128640; 开始上班</button>
       <button class="btn btn-ghost" id="btnHistory">&#128202; 历史记录</button>
@@ -325,10 +335,11 @@
     <div class="date-line" id="dateLine"></div>
 
     <div class="money-box">
-      <div class="money-label">&#128184; 本 班 累 计 已 赚</div>
+      <div class="money-label">&#128184; 当 天 累 计 已 赚</div>
       <div id="money">
         <span id="mInt">0</span><span id="mDec">.0000</span><span id="mUnit">元</span>
       </div>
+      <div class="cum-line hidden" id="cumLine"></div>
     </div>
 
     <div class="bar-wrap"><div id="barFill"></div></div>
@@ -348,12 +359,12 @@
       <span class="chip" id="chipOtTime">累计加班：00:00:00</span>
     </div>
 
-    <div class="sec-title">&#128197; 每日明细（实时）</div>
+    <div class="sec-title">&#128197; 每日明细（实时·记账日 = 上班点 ~ 次日上班点）</div>
     <div class="tbl-wrap">
       <table class="tbl">
-        <tr><th>日期</th><th>上班时长</th><th>班次内</th><th>加班</th><th>当日收入</th></tr>
+        <tr><th>记账日</th><th>时长</th><th>班次内</th><th>加班</th><th>收入</th></tr>
         <tbody id="dayBody">
-          <tr><td colspan="5" style="text-align:center;color:#5b6478;">开工后按自然日实时拆分</td></tr>
+          <tr><td colspan='5' style='text-align:center;color:#5b6478;'>开工后按记账日实时拆分</td></tr>
         </tbody>
       </table>
     </div>
@@ -382,10 +393,10 @@
         <tr><td class="k">加班时长</td><td class="v gold" id="sumOtDur">--</td></tr>
         <tr><td class="k">加班费</td><td class="v gold" id="sumOtPay">--</td></tr>
       </table>
-      <div class="sec-title">&#128197; 每日明细</div>
+      <div class="sec-title">&#128197; 记账日明细</div>
       <div class="tbl-wrap">
         <table class="tbl">
-          <tr><th>日期</th><th>上班时长</th><th>班次内</th><th>加班</th><th>当日收入</th></tr>
+          <tr><th>记账日</th><th>时长</th><th>班次内</th><th>加班</th><th>收入</th></tr>
           <tbody id="sumDayBody"></tbody>
         </table>
       </div>
@@ -406,7 +417,7 @@
       </div>
       <div class="tbl-wrap" style="max-height:340px;margin-top:14px;">
         <table class="tbl">
-          <tr><th>结算时间</th><th>班次</th><th>天数</th><th>加班</th><th>总额</th></tr>
+          <tr><th>结算时间</th><th>班次</th><th>类型</th><th>加班</th><th>金额</th></tr>
           <tbody id="histBody"></tbody>
         </table>
       </div>
@@ -417,6 +428,7 @@
     </div>
   </div>
 
+  <div id="toast" class="hidden"></div>
   <canvas id="confetti" class="hidden"></canvas>
 
 <script type="text/javascript">
@@ -426,7 +438,9 @@ var S = null;              // 班次配置
 var salaryMode = "day";    // day=日薪（默认） | month=月薪
 var MONTH_DAYS = 21.75;    // 国家法定月计薪天数
 var started = false;       // 是否已开始上班
-var stopArmed = false;     // 到点提醒是否已触发
+var canStopLast = false;   // 上一 tick 是否可下班（检测锁/解锁跳变）
+var settledBlocks = 0;     // 归档水位：已写入历史的记账块数量
+var toastTimer = null;     // toast 自动隐藏定时器
 var anchorMs = 0;          // 班次锚点（毫秒时间戳），跨天累计的基准
 var lastWholeSec = -1;     // 每日明细表刷新节流
 var audioCtx = null;
@@ -573,38 +587,36 @@ function normalInRange(ta, tb) {
   }
   return total;
 }
-/* 按自然日拆分明细行 */
-function dayRows(e) {
+/* 按记账块拆分明细行：块 k = [锚+k*86400, 锚+(k+1)*86400) 即 [当天上班点, 次日上班点) */
+function blockRows(e) {
   var rows = [];
   if (e <= 0) return rows;
-  var a = new Date(anchorMs);
-  var d0 = new Date(a.getFullYear(), a.getMonth(), a.getDate()).getTime();
-  var nowMs = anchorMs + e * 1000;
-  var dn = new Date(nowMs);
-  var dN = new Date(dn.getFullYear(), dn.getMonth(), dn.getDate()).getTime();
-  for (var t = d0; t <= dN; t += 86400000) {
-    var ta = Math.max(0, (t - anchorMs) / 1000);
-    var tb = Math.min(e, (t + 86400000 - anchorMs) / 1000);
+  var n = Math.floor(e / 86400);
+  for (var k = 0; k <= n; k++) {
+    var ta = k * 86400;
+    var tb = Math.min(e, (k + 1) * 86400);
     if (tb <= ta) continue;
     var nm = normalInRange(ta, tb);
     rows.push({
-      date: dateCN(t),
+      date: dateCN(anchorMs + ta * 1000),
       dur: tb - ta,
       normal: nm,
       ot: tb - ta - nm,
-      pay: nm * S.normalPerSec + (tb - ta - nm) * (S.otRate / 3600)
+      pay: nm * S.normalPerSec + (tb - ta - nm) * (S.otRate / 3600),
+      done: e >= (k + 1) * 86400
     });
   }
   return rows;
 }
-function renderDayRows(tbodyId, rows) {
+function renderBlockRows(tbodyId, rows) {
   var html = "";
   if (!rows.length) {
-    html = "<tr><td colspan='5' style='text-align:center;color:#5b6478;'>开工后按自然日实时拆分</td></tr>";
+    html = "<tr><td colspan='5' style='text-align:center;color:#5b6478;'>开工后按记账日实时拆分</td></tr>";
   } else {
     for (var i = 0; i < rows.length; i++) {
       var r = rows[i];
-      html += "<tr><td>" + r.date + "</td><td>" + fmtDur(r.dur) + "</td><td>" + fmtDur(r.normal) +
+      html += "<tr><td>" + r.date + (r.done ? "" : " <span style='color:#f5c542;'>进行中</span>") + "</td><td>" + fmtDur(r.dur) +
+              "</td><td>" + fmtDur(r.normal) +
               "</td><td>" + (r.ot > 0 ? "<span style='color:#ffd700;'>" + fmtDur(r.ot) + "</span>" : fmtDur(0)) +
               "</td><td class='red'>" + r.pay.toFixed(4) + "</td></tr>";
     }
@@ -647,7 +659,8 @@ function saveState() {
     startSec: S.startSec, endSec: S.endSec,
     shiftLen: S.shiftLen, daily: S.daily,
     rawSalary: S.rawSalary, salaryMode: S.salaryMode,
-    otRate: S.otRate, normalPerSec: S.normalPerSec
+    otRate: S.otRate, normalPerSec: S.normalPerSec,
+    settledBlocks: settledBlocks
   };
   writeFile(STATE_FILE, JSON.stringify(obj));
 }
@@ -772,7 +785,7 @@ function fillChips() {
 }
 function enterWork() {
   started = true;
-  stopArmed = false;
+  canStopLast = false;
   lastWholeSec = -1;
   $id("panelSetup").className = "hidden";
   $id("panelWork").className = "";
@@ -780,6 +793,7 @@ function enterWork() {
   $id("btnStop").disabled = true;
   $id("stopTip").className = "";
   $id("stopTip").innerHTML = "未到下班时间，暂不能下班哦，继续加油！";
+  $id("cumLine").className = "cum-line hidden";
   $id("barR").innerHTML = S.endStr + " 下班";
   timerId = setInterval(tick, 60);
   tick();
@@ -798,20 +812,25 @@ function onStart() {
 
   S = buildS(sv, ev, rawSalary, ov, salaryMode);
   anchorMs = new Date().getTime() - clockElapsedNow() * 1000;
+  settledBlocks = 0;
   saveState();
   playStartSound();
   enterWork();
 }
 /* 接续未结算班次 */
-function onResume(cfg) {
-  S = {
+function cfgToS(cfg) {
+  return {
     startStr: cfg.startStr, endStr: cfg.endStr,
     startSec: cfg.startSec, endSec: cfg.endSec,
     shiftLen: cfg.shiftLen, daily: cfg.daily,
     rawSalary: cfg.rawSalary, salaryMode: cfg.salaryMode,
     normalPerSec: cfg.normalPerSec, otRate: cfg.otRate
   };
+}
+function onResume(cfg) {
+  S = cfgToS(cfg);
   anchorMs = cfg.anchorMs;
+  settledBlocks = cfg.settledBlocks || 0;
   playStartSound();
   enterWork();
 }
@@ -823,8 +842,20 @@ function tick() {
   $id("dateLine").innerHTML = d.getFullYear() + " 年 " + (d.getMonth() + 1) + " 月 " + d.getDate() + " 日 · " + WEEK[d.getDay()];
 
   var e = elapsedSinceAnchor();
+  // 自动归档：已完成的记账块写入历史（只记账、不结算、无庆祝）
+  syncArchive(e, false);
+
+  // 大字 = 当前记账块累计；累计行 = 全会话总额
+  var bs = Math.floor(Math.max(0, e) / 86400) * 86400;
   var earned = earnedAt(e);
-  setMoney(earned);
+  setMoney(earned - earnedAt(bs));
+  var cum = $id("cumLine");
+  if (settledBlocks > 0) {
+    cum.className = "cum-line";
+    cum.innerHTML = "跨天累计 <b>" + earned.toFixed(4) + "</b> 元 · 已归档 <b>" + settledBlocks + "</b> 天";
+  } else {
+    cum.className = "cum-line hidden";
+  }
 
   // 当日周期内的进度
   var r = e % 86400;
@@ -854,27 +885,33 @@ function tick() {
   } else {
     fill.className = "ot";
     st.className = "ot";
-    st.innerHTML = "&#128293; 班次外时段（加班费率）进行中！累计加班 " + fmtDur(otTotal) + " ，本班已赚 " + earned.toFixed(4) + " 元！";
+    st.innerHTML = "&#128293; 班次外时段（加班费率）进行中！累计加班 " + fmtDur(otTotal) + " ，当天已赚 " + (earned - earnedAt(bs)).toFixed(4) + " 元！没点下班就继续算！";
   }
 
   // 每日明细表：整秒节流刷新
   var ws = Math.floor(e);
   if (ws !== lastWholeSec) {
     lastWholeSec = ws;
-    renderDayRows("dayBody", dayRows(e));
+    renderBlockRows("dayBody", blockRows(e));
   }
 
-  // 到点解锁下班按钮
-  if (e >= S.shiftLen && !stopArmed) {
-    stopArmed = true;
+  // 下班按钮：按天循环锁/解锁（[下班点, 次日上班点) 区间可下班）
+  var canStop = e >= 0 && r >= S.shiftLen;
+  if (canStop && !canStopLast) {
+    canStopLast = true;
     $id("btnStop").disabled = false;
     $id("stopTip").className = "ok";
-    $id("stopTip").innerHTML = "&#10004; 已到下班时间，随时可以下班结算！";
+    $id("stopTip").innerHTML = "&#10004; 已到下班时间，随时可以手动下班结算（唯一的结算方式）！";
     playBell();
+  } else if (!canStop && canStopLast) {
+    canStopLast = false;
+    $id("btnStop").disabled = true;
+    $id("stopTip").className = "";
+    $id("stopTip").innerHTML = "第 " + dayNo + " 天班次进行中，还不能下班结算，继续加油！";
   }
 }
 
-/* ================= 下班结算 ================= */
+/* ================= 下班结算（唯一结算入口：手动） ================= */
 function onStop() {
   if (!started) return;
   $id("btnStop").disabled = true;
@@ -882,12 +919,26 @@ function onStop() {
 
   var d = new Date();
   var e = elapsedSinceAnchor();
+  syncArchive(e, true);   // 保险：已完成块先归档（正常 tick 已归）
+  // 进行中块按此刻封账，写历史标记“手动”
+  var ta = settledBlocks * 86400;
+  var curDur = Math.max(0, e - ta);
+  var nmCur = normalInRange(ta, Math.max(ta, e));
+  var curOt = curDur - nmCur;
+  appendHistory({
+    t: dateCN(d.getTime()) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes()),
+    shift: S.startStr + "~" + S.endStr,
+    type: "手动结算",
+    ot: fmtDur(curOt),
+    total: (nmCur * S.normalPerSec + curOt * (S.otRate / 3600)).toFixed(4)
+  });
+
   var nm = normalTotal(e);
-  var otSec = e - nm;
+  var otSec = Math.max(0, e - nm);
   var normalPay = nm * S.normalPerSec;
   var otPay = otSec * (S.otRate / 3600);
   var total = normalPay + otPay;
-  var rows = dayRows(e);
+  var rows = blockRows(e);
 
   $id("sumStart").innerHTML = dateCN(anchorMs) + " " + S.startStr;
   $id("sumEnd").innerHTML = dateCN(d.getTime()) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes());
@@ -899,16 +950,9 @@ function onStop() {
   $id("sumOtDur").innerHTML = fmtDur(otSec);
   $id("sumOtPay").innerHTML = otPay.toFixed(4) + " 元";
   $id("sumTotal").innerHTML = total.toFixed(4) + "<span class='u'>元</span>";
-  renderDayRows("sumDayBody", rows);
+  renderBlockRows("sumDayBody", rows);
   $id("sumQuote").innerHTML = QUOTES[Math.floor(Math.random() * QUOTES.length)];
 
-  appendHistory({
-    t: dateCN(d.getTime()) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes()),
-    shift: S.startStr + "~" + S.endStr,
-    days: rows.length,
-    ot: fmtDur(otSec),
-    total: total.toFixed(4)
-  });
   delFile(STATE_FILE);
 
   $id("modal").className = "modal";
@@ -940,18 +984,63 @@ function showHistory() {
   } else {
     for (var i = arr.length - 1; i >= 0; i--) {
       var r = arr[i];
-      html += "<tr><td>" + r.t + "</td><td>" + r.shift + "</td><td>" + r.days + "</td><td>" + r.ot + "</td><td class='red'>" + r.total + "</td></tr>";
+      html += "<tr><td>" + r.t + "</td><td>" + r.shift + "</td><td>" + (r.type || (r.days + " 天")) + "</td><td>" + r.ot + "</td><td class='red'>" + r.total + "</td></tr>";
     }
   }
   $id("histBody").innerHTML = html;
   $id("modalHist").className = "modal";
 }
 
+/* ================= 自动归档（只记账、不是结算、无庆祝） ================= */
+/* 记账块 k 的完整信息（块长恒为 86400 秒） */
+function blockInfo(k) {
+  var ta = k * 86400, tb = (k + 1) * 86400;
+  var nm = normalInRange(ta, tb);
+  return {
+    ta: ta, tb: tb, nm: nm, ot: 86400 - nm,
+    pay: nm * S.normalPerSec + (86400 - nm) * (S.otRate / 3600)
+  };
+}
+function archiveBlock(k, silent) {
+  var b = blockInfo(k);
+  appendHistory({
+    t: dateCN(anchorMs + b.tb * 1000) + " " + S.startStr,
+    shift: S.startStr + "~" + S.endStr,
+    type: "自动归档",
+    ot: fmtDur(b.ot),
+    total: b.pay.toFixed(4)
+  });
+  if (!silent) {
+    showToast("&#128203; 第 " + (k + 1) + " 天账块已归档：" + b.pay.toFixed(4) + " 元（含加班 " + fmtDur(b.ot) +
+              "）；第 " + (k + 2) + " 天自动开工，大字归零重跳");
+  }
+}
+/* 把已完成的记账块补档入历史；tick 与启动时都会调，纯推导、不丢不重 */
+function syncArchive(e, silent) {
+  var completed = Math.floor(Math.max(0, e) / 86400);
+  var changed = false;
+  while (settledBlocks < completed) {
+    archiveBlock(settledBlocks, silent);
+    settledBlocks++;
+    changed = true;
+  }
+  if (changed) saveState();
+  return changed;
+}
+function showToast(msg) {
+  var t = $id("toast");
+  t.innerHTML = msg;
+  t.className = "";
+  if (toastTimer) clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () { t.className = "hidden"; }, 5000);
+}
+
 /* ================= 放弃 / 再来 / 接续提示 ================= */
 function onCancel() {
-  if (confirm("确定放弃本次上班记录吗？累计薪资将清零。")) {
+  if (confirm("确定放弃本次上班吗？已归档天保留在历史，进行中累计将清零。")) {
     clearInterval(timerId); timerId = null;
-    started = false; stopArmed = false;
+    started = false; canStopLast = false;
+    settledBlocks = 0;
     delFile(STATE_FILE);
     backToSetup();
   }
@@ -971,15 +1060,25 @@ function checkResume() {
   var cfg = loadState();
   var bar = $id("resumeBar");
   if (!cfg || !cfg.anchorMs) { bar.className = "hidden"; return; }
+  // 惰性推导：启动先把已完成记账块补档入历史（只补记录、不补庆祝）
+  S = cfgToS(cfg);
+  anchorMs = cfg.anchorMs;
+  settledBlocks = cfg.settledBlocks || 0;
+  var e = elapsedSinceAnchor();
+  syncArchive(e, true);
+  var cur = earnedAt(e) - earnedAt(Math.floor(Math.max(0, e) / 86400) * 86400);
   bar.className = "";
-  bar.innerHTML = "&#9888; 检测到未结算班次：" + dateCN(cfg.anchorMs) + " " + cfg.startStr +
-    " 开工，累计收入仍在继续。" +
+  bar.innerHTML = "&#9888; 检测到未关闭班次：" + dateCN(cfg.anchorMs) + " " + cfg.startStr + " 开工" +
+    (settledBlocks > 0 ? "，离开期间已自动归档 <b style='color:#f5c542;'>" + settledBlocks + "</b> 天" : "") +
+    "，进行中累计 " + cur.toFixed(4) + " 元仍在继续。" +
     "<button class='btn btn-stop' id='btnResume'>继续上一班</button>" +
-    "<button class='btn btn-ghost' id='btnDiscard'>作废</button>";
+    "<button class='btn btn-ghost' id='btnDiscard'>作废进行中</button>";
   $id("btnResume").onclick = function () { bar.className = "hidden"; onResume(cfg); };
   $id("btnDiscard").onclick = function () {
-    if (confirm("作废后该班次的累计记录将被删除，确定吗？")) {
+    if (confirm("作废仅放弃当前进行中的累计；已归档的 " + settledBlocks + " 天保留在历史。确定吗？")) {
       delFile(STATE_FILE);
+      settledBlocks = 0;
+      S = null; anchorMs = 0;
       bar.className = "hidden";
     }
   };
